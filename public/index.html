@@ -1,0 +1,1231 @@
+<!doctype html>
+<html lang="id">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Chat AI Assistant</title>
+		<style>
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+				margin: 0;
+				display: flex;
+				height: 100vh;
+				background: #f1f5f9;
+				overflow: hidden;
+			}
+			#sidebar {
+				width: 280px;
+				background: #0f172a;
+				color: #f8fafc;
+				padding: 20px;
+				display: flex;
+				flex-direction: column;
+			}
+			#main {
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+				min-width: 0;
+			}
+			#chat-box {
+				flex: 1;
+				padding: 20px;
+				overflow-y: auto;
+				display: flex;
+				flex-direction: column;
+				gap: 15px;
+			}
+			#input-area {
+				padding: 15px 20px;
+				background: #ffffff;
+				border-top: 1px solid #e2e8f0;
+				display: flex;
+				gap: 10px;
+			}
+			input[type="text"] {
+				flex: 1;
+				padding: 12px;
+				border: 1px solid #cbd5e1;
+				border-radius: 6px;
+				outline: none;
+			}
+			button {
+				padding: 12px 20px;
+				background: #2563eb;
+				color: white;
+				border: none;
+				border-radius: 6px;
+				cursor: pointer;
+				font-weight: bold;
+			}
+			button:hover {
+				background: #1d4ed8;
+			}
+			#new-chat {
+				width: 100%;
+				margin-bottom: 18px;
+				background: #38bdf8;
+				color: #0f172a;
+			}
+			.history-title {
+				font-size: 10px;
+				letter-spacing: 1px;
+				color: #94a3b8;
+				margin: 12px 0 8px;
+			}
+			#chat-history-list {
+				max-height: 230px;
+				overflow-y: auto;
+			}
+			.history-item {
+				width: 100%;
+				padding: 9px 10px;
+				margin-bottom: 5px;
+				background: transparent;
+				border: 1px solid #334155;
+				color: #cbd5e1;
+				font-size: 11px;
+				font-weight: normal;
+				text-align: left;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.history-item:hover {
+				background: #1e293b;
+			}
+			.empty-history {
+				color: #64748b;
+				font-size: 11px;
+				padding: 8px 0;
+			}
+			.document-upload {
+				margin-top: 18px;
+			}
+			#document-file {
+				width: 100%;
+				color: #cbd5e1;
+				font-size: 11px;
+				margin: 4px 0 8px;
+			}
+			#upload-document {
+				width: 100%;
+				padding: 9px;
+				font-size: 11px;
+			}
+			#upload-status {
+				display: block;
+				color: #64748b;
+				font-size: 10px;
+				line-height: 1.4;
+				margin-top: 7px;
+			}
+			.loading {
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+				color: #64748b;
+				font-size: 13px;
+			}
+			.spinner {
+				width: 14px;
+				height: 14px;
+				border: 2px solid #cbd5e1;
+				border-top-color: #2563eb;
+				border-radius: 50%;
+				animation: spin 0.8s linear infinite;
+			}
+			@keyframes spin {
+				to {
+					transform: rotate(360deg);
+				}
+			}
+			.table-wrap {
+				overflow-x: auto;
+				margin-top: 10px;
+			}
+			table {
+				border-collapse: collapse;
+				min-width: 100%;
+				font-size: 12px;
+			}
+			th,
+			td {
+				border: 1px solid #e2e8f0;
+				padding: 8px;
+				text-align: left;
+				white-space: nowrap;
+			}
+			th {
+				background: #f1f5f9;
+				color: #1e40af;
+			}
+			select {
+				padding: 12px;
+				border-radius: 6px;
+				border: 1px solid #cbd5e1;
+				background: #f8fafc;
+			}
+			.msg {
+				max-width: 80%;
+				padding: 12px 16px;
+				border-radius: 8px;
+				line-height: 1.5;
+				font-size: 14px;
+				min-width: 0;
+				overflow-wrap: anywhere;
+				word-break: break-word;
+			}
+			.user {
+				background: #dbeafe;
+				color: #1e40af;
+				align-self: flex-end;
+			}
+			.assistant {
+				background: #ffffff;
+				border: 1px solid #e2e8f0;
+				color: #334155;
+				align-self: flex-start;
+			}
+			.token-card {
+				background: #1e293b;
+				padding: 15px;
+				border-radius: 8px;
+				margin-top: auto;
+				border: 1px solid #334155;
+			}
+			pre {
+				background: #0f172a;
+				color: #38bdf8;
+				padding: 10px;
+				border-radius: 4px;
+				overflow-x: auto;
+				margin: 5px 0 0 0;
+			}
+			code {
+				font-family: monospace;
+				white-space: pre-wrap;
+				word-break: break-word;
+			}
+			.chart-card {
+				margin-top: 18px;
+				padding: 16px;
+				border: 1px solid #e1e8f0;
+				border-radius: 14px;
+				background: #fbfdff;
+			}
+			.chart-title {
+				margin: 0 0 14px;
+				font-size: 12px;
+				font-weight: 700;
+				color: #52657d;
+			}
+			.chart-bars {
+				display: flex;
+				align-items: flex-end;
+				gap: 12px;
+				height: 180px;
+				overflow-x: auto;
+				padding: 10px 4px 0;
+				border-bottom: 1px solid #cbd5e1;
+			}
+			.chart-bar-group {
+				display: flex;
+				flex: 0 0 64px;
+				height: 100%;
+				flex-direction: column;
+				align-items: center;
+				justify-content: flex-end;
+				gap: 5px;
+			}
+			.chart-value {
+				font-size: 10px;
+				color: #52657d;
+			}
+			.chart-bar {
+				width: 34px;
+				min-height: 4px;
+				border-radius: 7px 7px 0 0;
+				background: linear-gradient(180deg, #4f8df7, #2563eb);
+			}
+			.chart-label {
+				width: 64px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+				font-size: 10px;
+				text-align: center;
+				color: #64748b;
+			}
+			.chart-pie-layout {
+				display: flex;
+				align-items: center;
+				gap: 28px;
+				min-height: 190px;
+			}
+			.chart-pie {
+				width: 170px;
+				height: 170px;
+				flex: 0 0 170px;
+				border-radius: 50%;
+				background: conic-gradient(var(--pie-gradient));
+				position: relative;
+			}
+			.chart-pie::after {
+				content: "";
+				position: absolute;
+				inset: 37px;
+				border-radius: 50%;
+				background: #fbfdff;
+			}
+			.chart-legend {
+				display: grid;
+				gap: 8px;
+				min-width: 0;
+			}
+			.chart-legend-item {
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				font-size: 11px;
+				color: #52657d;
+			}
+			.chart-legend-color {
+				width: 10px;
+				height: 10px;
+				flex: 0 0 10px;
+				border-radius: 3px;
+			}
+			.chart-line-wrap {
+				overflow-x: auto;
+				padding-bottom: 4px;
+			}
+			.chart-line {
+				width: 100%;
+				min-width: 560px;
+				height: 220px;
+			}
+			.chart-line-grid {
+				stroke: #dbe4ee;
+				stroke-width: 1;
+			}
+			.chart-line-path {
+				fill: none;
+				stroke: #2563eb;
+				stroke-width: 3;
+				stroke-linecap: round;
+				stroke-linejoin: round;
+			}
+			.chart-line-point {
+				fill: #ffffff;
+				stroke: #2563eb;
+				stroke-width: 3;
+			}
+			.assistant-actions {
+				display: flex;
+				justify-content: flex-end;
+				gap: 8px;
+				margin: 0 0 10px;
+				padding-bottom: 8px;
+				border-bottom: 1px solid #e2e8f0;
+			}
+			.assistant-actions button {
+				display: grid;
+				place-items: center;
+				width: 42px;
+				height: 30px;
+				padding: 0;
+				font-family: Arial, sans-serif;
+				font-size: 16px;
+				background: #f1f5f9;
+				color: #1e3a8a;
+				border: 1px solid #d6e0eb;
+				border-radius: 8px;
+				line-height: 1;
+			}
+			.assistant-actions button:hover {
+				background: #cbd5e1;
+			}
+			/* Workspace polish */
+			body {
+				font-family: "Avenir Next", "Segoe UI", sans-serif;
+				background: #eef3f8;
+			}
+			#sidebar {
+				width: 300px;
+				padding: 24px 18px 18px;
+				background: #101b31;
+				gap: 14px;
+				overflow-y: auto;
+			}
+			#main {
+				min-width: 0;
+			}
+			#chat-box {
+				padding: 28px clamp(18px, 5vw, 72px);
+				gap: 18px;
+				background: radial-gradient(
+					circle at top right,
+					#f8fbff 0,
+					#eef3f8 42%,
+					#e8eef5 100%
+				);
+			}
+			#input-area {
+				padding: 14px clamp(18px, 5vw, 72px) 18px;
+				background: rgba(255, 255, 255, 0.92);
+				border-top-color: #dbe4ee;
+				box-shadow: 0 -8px 24px rgba(31, 52, 78, 0.06);
+			}
+			#new-chat {
+				margin: 0;
+				background: #35b9ec;
+				box-shadow: 0 8px 18px rgba(53, 185, 236, 0.18);
+			}
+			.history-title {
+				margin: 0 0 8px;
+				font-weight: 700;
+			}
+			#chat-history-list {
+				max-height: 190px;
+				padding-right: 3px;
+			}
+			.history-item {
+				border-color: #2b3b55;
+				border-radius: 8px;
+			}
+			.document-upload {
+				margin: 0;
+				padding: 15px;
+				background: #172640;
+				border: 1px solid #2b3d5a;
+				border-radius: 12px;
+				box-shadow: 0 10px 24px rgba(3, 12, 28, 0.12);
+			}
+			.document-heading {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				margin-bottom: 12px;
+				color: #e5edf8;
+				font-size: 13px;
+				font-weight: 700;
+			}
+			.document-heading span:first-child {
+				display: grid;
+				place-items: center;
+				width: 27px;
+				height: 27px;
+				border-radius: 8px;
+				background: #25466a;
+				color: #7dd3fc;
+			}
+			.upload-dropzone {
+				padding: 12px 10px;
+				border: 1px dashed #4f6b8b;
+				border-radius: 9px;
+				background: #132139;
+			}
+			.token-card {
+				box-shadow: 0 10px 22px rgba(3, 12, 28, 0.12);
+			}
+			.workspace-header {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 20px;
+				padding: 16px clamp(18px, 5vw, 72px);
+				background: rgba(255, 255, 255, 0.82);
+				border-bottom: 1px solid #dbe4ee;
+			}
+			.workspace-title {
+				margin: 0;
+				font-size: 16px;
+				color: #172b4d;
+			}
+			.workspace-subtitle {
+				margin: 3px 0 0;
+				font-size: 11px;
+				color: #718096;
+			}
+			.online-badge {
+				padding: 6px 10px;
+				border-radius: 999px;
+				background: #e0f2fe;
+				color: #0369a1;
+				font-size: 11px;
+				font-weight: 700;
+			}
+			/* Conversational workspace layout */
+			#chat-box {
+				padding: 32px 24px 120px;
+				gap: 8px;
+				background: #ffffff;
+			}
+			.msg.assistant {
+				width: min(100%, 880px);
+				max-width: 880px;
+				padding: 18px 8px;
+				background: transparent;
+				border: 0;
+			}
+			.msg.user {
+				max-width: min(78%, 700px);
+				padding: 12px 16px;
+				border-radius: 18px;
+				align-self: flex-end;
+			}
+			.workspace-header {
+				background: #ffffff;
+				box-shadow: 0 1px 0 #e8edf3;
+				flex-direction: column;
+				align-items: stretch;
+				gap: 12px;
+			}
+			.workspace-header > div:first-child {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+			}
+			.workspace-header .rag-toolbar {
+				width: 100%;
+				flex-wrap: wrap;
+				justify-content: space-between;
+				min-width: 0;
+			}
+			.workspace-header .document-upload {
+				flex: 1 1 100%;
+				width: 100%;
+				min-width: 0;
+			}
+			.workspace-header .online-badge {
+				margin-left: auto;
+			}
+			.workspace-header .upload-dropzone {
+				min-width: 0;
+				flex: 1;
+			}
+			#input-area {
+				align-items: center;
+				justify-content: center;
+				margin: 0;
+				padding: 14px 24px 22px;
+				background: #ffffff;
+				border-top: 0;
+				box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.06);
+			}
+			.composer-shell {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				width: min(100%, 880px);
+				padding: 8px;
+				background: #f8fafc;
+				border: 1px solid #d5deea;
+				border-radius: 18px;
+				box-shadow: 0 6px 18px rgba(31, 52, 78, 0.08);
+			}
+			.composer-shell select {
+				border: 0;
+				background: #f1f5f9;
+				border-radius: 999px;
+				font-size: 12px;
+				white-space: nowrap;
+			}
+			.composer-shell input[type="text"] {
+				flex: 1;
+				min-height: 46px;
+				border: 0;
+				border-radius: 999px;
+				padding: 12px 18px;
+				background: transparent;
+				box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
+			}
+			.composer-shell > button {
+				width: 46px;
+				height: 46px;
+				padding: 0;
+				border-radius: 50%;
+				font-size: 0;
+			}
+			.composer-shell > button::after {
+				content: "↑";
+				font-size: 22px;
+				font-weight: 400;
+			}
+			.assistant-actions {
+				margin-top: 0;
+				padding-top: 0;
+				border-top: 0;
+				border-bottom: 0;
+			}
+			.workspace-header .document-upload {
+				border-radius: 999px;
+			}
+			.rag-toolbar {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+			}
+			.workspace-header .document-upload {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 7px 9px;
+				background: #f8fbff;
+				border: 1px solid #d4e0ed;
+				border-radius: 10px;
+				box-shadow: none;
+			}
+			.workspace-header .document-heading {
+				margin: 0;
+				color: #294467;
+				font-size: 11px;
+				white-space: nowrap;
+			}
+			.workspace-header .document-heading span:first-child {
+				width: 22px;
+				height: 22px;
+				background: #dff3ff;
+				color: #0879a8;
+			}
+			.workspace-header .upload-dropzone {
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				padding: 0;
+				border: 0;
+				background: transparent;
+			}
+			.workspace-header #document-file {
+				width: 190px;
+				margin: 0;
+				color: #60748d;
+				font-size: 10px;
+			}
+			.workspace-header #upload-document {
+				width: auto;
+				padding: 8px 11px;
+				font-size: 10px;
+				white-space: nowrap;
+			}
+			.workspace-header #upload-status {
+				margin: 0;
+				min-width: 0;
+				max-width: 260px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+				color: #718096;
+			}
+			@media print {
+				body {
+					display: block;
+					background: #fff;
+					overflow: visible;
+				}
+				#sidebar,
+				#input-area,
+				.user,
+				.assistant-actions {
+					display: none !important;
+				}
+				#main,
+				#chat-box {
+					height: auto;
+					min-height: 0;
+					padding: 0;
+				}
+				.assistant {
+					max-width: 100%;
+					border: 0;
+				}
+			}
+			@media (max-width: 720px) {
+				body {
+					display: block;
+					height: auto;
+					min-height: 100vh;
+					overflow: auto;
+				}
+				#sidebar {
+					width: auto;
+					min-height: auto;
+					padding: 14px;
+				}
+				#chat-history-list {
+					max-height: 150px;
+				}
+				#main {
+					min-height: 65vh;
+				}
+				#chat-box {
+					min-height: 55vh;
+					padding: 14px;
+				}
+				#input-area {
+					padding: 10px 14px;
+					flex-wrap: wrap;
+				}
+				#input-area select,
+				#input-area input,
+				#input-area button {
+					min-width: 0;
+				}
+				#input-area select {
+					width: 100%;
+				}
+				#input-area input {
+					flex: 1 1 70%;
+				}
+				.workspace-header {
+					align-items: flex-start;
+					flex-direction: column;
+				}
+				.rag-toolbar,
+				.workspace-header .document-upload,
+				.workspace-header .upload-dropzone {
+					width: 100%;
+				}
+				.workspace-header .document-upload {
+					align-items: flex-start;
+					flex-direction: column;
+				}
+				.workspace-header #document-file {
+					width: 100%;
+				}
+				.workspace-header .upload-dropzone {
+					flex-wrap: wrap;
+				}
+				.workspace-header #upload-status {
+					width: 100%;
+				}
+				.msg {
+					max-width: 94%;
+				}
+				table {
+					display: block;
+					overflow-x: auto;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div id="sidebar">
+			<div class="brand-block">
+				<h2 style="margin: 0 0 5px 0">CHAT AI</h2>
+				<p style="font-size: 12px; color: #94a3b8; margin: 0">
+					Maintenance Assistant
+				</p>
+			</div>
+			<button id="new-chat" type="button">✦ &nbsp;Chat Baru</button>
+			<div class="history-title">RIWAYAT PENCARIAN</div>
+			<div id="chat-history-list"></div>
+			<div class="token-card">
+				<small style="color: #94a3b8">Est. Total Token Dipakai:</small>
+				<div
+					id="token-count"
+					style="
+						font-size: 20px;
+						font-weight: bold;
+						color: #38bdf8;
+						margin-top: 5px;
+					">
+					0 Token
+				</div>
+				<small
+					id="token-limit"
+					style="display: block; color: #94a3b8; margin-top: 6px"
+					>Limit harian: memuat...</small
+				>
+			</div>
+		</div>
+
+		<div id="main">
+			<header class="workspace-header">
+				<div>
+					<h1 class="workspace-title">workspace</h1>
+					<p class="workspace-subtitle">
+						Tanyakan dokumen atau cari data operasional
+					</p>
+				</div>
+				<div class="rag-toolbar">
+					<div id="document-upload-panel" class="document-upload">
+						<div class="document-heading">
+							<span>↥</span><span>Dokumen RAG</span>
+						</div>
+						<div class="upload-dropzone">
+							<input
+								id="document-file"
+								type="file"
+								accept=".pdf,.txt,.md,.csv,.json" />
+							<button id="upload-document" type="button">Upload Dokumen</button>
+							<small id="upload-status"
+								>PDF, TXT, MD, CSV, JSON · Maks. 20 MB</small
+							>
+						</div>
+					</div>
+					<span class="online-badge">● Siap digunakan</span>
+				</div>
+			</header>
+			<div id="chat-box"></div>
+
+			<div id="input-area">
+				<div class="composer-shell">
+					<select id="mode">
+						<option value="rag">📄 Cek Dokumen (RAG)</option>
+						<option value="sql">🗄️ Cari Data (SQL)</option>
+					</select>
+					<input
+						type="text"
+						id="user-input"
+						placeholder="Ketik pertanyaan..."
+						onkeydown="if (event.key === 'Enter') sendMessage();" />
+					<button onclick="sendMessage()">Kirim&nbsp; ↗</button>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			let conversationId = crypto.randomUUID();
+
+			function updateModeControls() {
+				const isRag = document.getElementById("mode").value === "rag";
+				document.getElementById("document-upload-panel").style.display = isRag
+					? "flex"
+					: "none";
+			}
+
+			document
+				.getElementById("mode")
+				.addEventListener("change", updateModeControls);
+			updateModeControls();
+
+			async function loadHistory() {
+				const res = await fetch("/api/history");
+				const history = await res.json();
+				const box = document.getElementById("chat-box");
+				box.innerHTML = "";
+
+				let previousQuestion = "";
+				history.forEach((h) => {
+					if (h.role === "user") previousQuestion = h.content;
+					const div = document.createElement("div");
+					div.className = `msg ${h.role}`;
+					div.innerHTML =
+						`<strong>${h.role === "user" ? "Anda" : "AI Assistant"}:</strong><br>` +
+						renderHistoryContent(h, previousQuestion);
+					if (h.role === "assistant")
+						addAssistantActions(div, h.content, h.resultJson);
+					box.appendChild(div);
+				});
+
+				box.scrollTop = box.scrollHeight;
+				updateTokens();
+			}
+
+			async function loadChatSessions() {
+				const res = await fetch("/api/sessions");
+				const sessions = await res.json();
+				const list = document.getElementById("chat-history-list");
+				list.innerHTML = sessions.length
+					? sessions
+							.map(
+								(session) =>
+									`<button class="history-item" data-id="${session.id}">${escapeHtml(session.title.slice(0, 32))}${session.title.length > 32 ? "..." : ""}</button>`,
+							)
+							.join("")
+					: '<div class="empty-history">Belum ada chat</div>';
+				document
+					.querySelectorAll(".history-item")
+					.forEach((item) =>
+						item.addEventListener("click", () => openChat(item.dataset.id)),
+					);
+			}
+
+			async function openChat(id) {
+				conversationId = id;
+				const res = await fetch(
+					`/api/history?conversationId=${encodeURIComponent(id)}`,
+				);
+				const history = await res.json();
+				const box = document.getElementById("chat-box");
+				box.innerHTML = "";
+				let previousQuestion = "";
+				history.forEach((h) => {
+					if (h.role === "user") previousQuestion = h.content;
+					const div = document.createElement("div");
+					div.className = `msg ${h.role}`;
+					div.innerHTML =
+						`<strong>${h.role === "user" ? "Anda" : "AI Assistant"}:</strong><br>` +
+						renderHistoryContent(h, previousQuestion);
+					if (h.role === "assistant")
+						addAssistantActions(div, h.content, h.resultJson);
+					box.appendChild(div);
+				});
+				box.scrollTop = box.scrollHeight;
+			}
+
+			function escapeHtml(text) {
+				return String(text).replace(
+					/[&<>'"]/g,
+					(char) =>
+						({
+							"&": "&amp;",
+							"<": "&lt;",
+							">": "&gt;",
+							"'": "&#039;",
+							'"': "&quot;",
+						})[char],
+				);
+			}
+
+			function formatText(text) {
+				const jsonBlock = text.match(/```json([\s\S]*?)```/);
+				if (jsonBlock) {
+					try {
+						return `${escapeHtml(text.slice(0, jsonBlock.index))}${renderRows(JSON.parse(jsonBlock[1]))}`;
+					} catch (error) {
+						// Keep legacy responses readable when the JSON block is invalid.
+					}
+				}
+				return text
+					.replace(
+						/[&<>\"]/g,
+						(char) =>
+							({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;" })[
+								char
+							],
+					)
+					.replace(/`([^`]+)`/g, "<code>$1</code>")
+					.replace(/\n/g, "<br>");
+			}
+
+			function renderHistoryContent(historyItem, request = "") {
+				let result = "";
+				let chart = "";
+				if (historyItem.resultJson) {
+					try {
+						const rows = JSON.parse(historyItem.resultJson);
+						result = renderRows(rows);
+						chart = renderChart(rows, request);
+					} catch (error) {
+						result = "";
+					}
+				}
+				return `${formatText(historyItem.content)}${result}${chart}`;
+			}
+
+			function formatRowsForCopy(rows) {
+				if (!Array.isArray(rows) || rows.length === 0) return "";
+				const columns = Object.keys(rows[0]);
+				return `\n\n${columns.join("\t")}\n${rows.map((row) => columns.map((column) => row[column] ?? "-").join("\t")).join("\n")}`;
+			}
+
+			function downloadAsImage(container) {
+				const clone = container.cloneNode(true);
+				clone.querySelector(".assistant-actions")?.remove();
+				const height = Math.min(
+					32000,
+					Math.max(
+						320,
+						Math.ceil(container.getBoundingClientRect().height) + 48,
+					),
+				);
+				clone.style.cssText =
+					"width:1100px;padding:32px;background:#ffffff;color:#334155;font:16px/1.6 Arial,sans-serif;";
+				clone.insertAdjacentHTML(
+					"afterbegin",
+					"<style>table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #dbe4ee;padding:8px;text-align:left;white-space:normal}th{background:#f1f5f9;color:#1e40af}code{white-space:pre-wrap;overflow-wrap:anywhere}</style>",
+				);
+				const wrapper = document.createElement("div");
+				wrapper.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+				wrapper.appendChild(clone);
+				const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1164" height="${height}"><foreignObject width="100%" height="100%">${new XMLSerializer().serializeToString(wrapper)}</foreignObject></svg>`;
+				const link = document.createElement("a");
+				link.download = `hasil-chat-${new Date().toISOString().slice(0, 10)}.svg`;
+				link.href = URL.createObjectURL(
+					new Blob([svg], { type: "image/svg+xml" }),
+				);
+				link.click();
+				URL.revokeObjectURL(link.href);
+			}
+
+			function downloadAsExcel(text, rows) {
+				const table = rows?.length
+					? `<table><thead><tr>${Object.keys(rows[0])
+							.map((column) => `<th>${escapeHtml(column)}</th>`)
+							.join("")}</tr></thead><tbody>${rows
+							.map(
+								(row) =>
+									`<tr>${Object.keys(rows[0])
+										.map(
+											(column) => `<td>${escapeHtml(row[column] ?? "-")}</td>`,
+										)
+										.join("")}</tr>`,
+							)
+							.join("")}</tbody></table>`
+					: "";
+				const html = `<html><head><meta charset="UTF-8"></head><body><h2>Hasil Chat</h2><p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>${table}</body></html>`;
+				const link = document.createElement("a");
+				link.download = `hasil-chat-${new Date().toISOString().slice(0, 10)}.xls`;
+				link.href = URL.createObjectURL(
+					new Blob([html], { type: "application/vnd.ms-excel" }),
+				);
+				link.click();
+				URL.revokeObjectURL(link.href);
+			}
+
+			function addAssistantActions(container, text, resultJsonOrRows) {
+				let rows = resultJsonOrRows;
+				if (typeof rows === "string") {
+					try {
+						rows = JSON.parse(rows);
+					} catch (error) {
+						rows = null;
+					}
+				}
+				const fullText = `${text}${formatRowsForCopy(rows)}`;
+				const actions = document.createElement("div");
+				actions.className = "assistant-actions";
+				const copyButton = document.createElement("button");
+				copyButton.type = "button";
+				copyButton.textContent = "⧉";
+				copyButton.title = "Salin hasil";
+				copyButton.setAttribute("aria-label", "Salin hasil");
+				copyButton.addEventListener("click", async () => {
+					await navigator.clipboard.writeText(fullText);
+					copyButton.textContent = "✓";
+					copyButton.title = "Tersalin";
+					setTimeout(() => {
+						copyButton.textContent = "⧉";
+						copyButton.title = "Salin hasil";
+					}, 1500);
+				});
+				const imageButton = document.createElement("button");
+				imageButton.type = "button";
+				imageButton.textContent = "⇩▧";
+				imageButton.title = "Download sebagai gambar";
+				imageButton.setAttribute("aria-label", "Download sebagai gambar");
+				imageButton.addEventListener("click", () => downloadAsImage(container));
+				const excelButton = document.createElement("button");
+				excelButton.type = "button";
+				excelButton.textContent = "⇩▦";
+				excelButton.title = "Download Excel";
+				excelButton.setAttribute("aria-label", "Download Excel");
+				excelButton.addEventListener("click", () =>
+					downloadAsExcel(text, rows),
+				);
+				const printButton = document.createElement("button");
+				printButton.type = "button";
+				printButton.textContent = "⇩▤";
+				printButton.title = "Download PDF melalui cetak";
+				printButton.setAttribute("aria-label", "Download PDF melalui cetak");
+				printButton.addEventListener("click", () => {
+					const printWindow = window.open("", "_blank", "width=800,height=600");
+					if (!printWindow) return;
+					printWindow.document.write(
+						`<!doctype html><html><head><title>Hasil Chat</title><style>body{font-family:Arial,sans-serif;line-height:1.6;padding:32px;white-space:pre-wrap;overflow-wrap:anywhere}h1{font-size:18px}table{border-collapse:collapse;margin-top:16px}th,td{border:1px solid #999;padding:6px 10px;text-align:left}</style></head><body><h1>Hasil Chat</h1>${escapeHtml(text)}${
+							rows?.length
+								? `<table><thead><tr>${Object.keys(rows[0])
+										.map((column) => `<th>${escapeHtml(column)}</th>`)
+										.join("")}</tr></thead><tbody>${rows
+										.map(
+											(row) =>
+												`<tr>${Object.keys(rows[0])
+													.map(
+														(column) =>
+															`<td>${escapeHtml(row[column] ?? "-")}</td>`,
+													)
+													.join("")}</tr>`,
+										)
+										.join("")}</tbody></table>`
+								: ""
+						}</body></html>`,
+					);
+					printWindow.document.close();
+					printWindow.focus();
+					printWindow.print();
+				});
+				actions.append(copyButton, imageButton, excelButton, printButton);
+				container.prepend(actions);
+			}
+
+			function renderRows(rows) {
+				if (!Array.isArray(rows) || rows.length === 0)
+					return "<p>Tidak ada data.</p>";
+				const columns = Object.keys(rows[0]);
+				return `<div class="table-wrap"><table><thead><tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(row[column] ?? "-")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+			}
+
+			function renderChart(rows, request = "") {
+				if (!Array.isArray(rows) || rows.length < 2) return "";
+				const columns = Object.keys(rows[0]);
+				const valueColumn = columns.find((column) =>
+					rows.every((row) => Number.isFinite(Number(row[column]))),
+				);
+				if (!valueColumn) return "";
+				const labelColumn =
+					columns.find((column) => column !== valueColumn) || valueColumn;
+				const values = rows.map((row) => Number(row[valueColumn]));
+				const wantsPie = /\b(pie|donat|doughnut)\b/i.test(request);
+				const wantsLine = /\b(line|garis|trend|tren)\b/i.test(request);
+				if (wantsLine) {
+					const colors = [
+						"#2563eb",
+						"#14b8a6",
+						"#f59e0b",
+						"#ef4444",
+						"#8b5cf6",
+						"#ec4899",
+						"#64748b",
+					];
+					const maximum = Math.max(...values, 1);
+					const chartWidth = Math.max(560, rows.length * 100);
+					const points = rows.map((row, index) => {
+						const x =
+							rows.length === 1
+								? chartWidth / 2
+								: 44 + (index * (chartWidth - 88)) / (rows.length - 1);
+						const y = 170 - (Number(row[valueColumn]) / maximum) * 130;
+						return { x, y, row };
+					});
+					const pointString = points
+						.map((point) => `${point.x},${point.y}`)
+						.join(" ");
+					return `<section class="chart-card"><h4 class="chart-title">Grafik ${escapeHtml(valueColumn)} · Garis</h4><div class="chart-line-wrap"><svg class="chart-line" viewBox="0 0 ${chartWidth} 220" role="img" aria-label="Grafik garis ${escapeHtml(valueColumn)}"><line class="chart-line-grid" x1="44" y1="40" x2="${chartWidth - 44}" y2="40"></line><line class="chart-line-grid" x1="44" y1="105" x2="${chartWidth - 44}" y2="105"></line><line class="chart-line-grid" x1="44" y1="170" x2="${chartWidth - 44}" y2="170"></line><polyline class="chart-line-path" points="${pointString}"></polyline>${points.map((point) => `<circle class="chart-line-point" cx="${point.x}" cy="${point.y}" r="6"></circle><text x="${point.x}" y="${point.y - 12}" text-anchor="middle" fill="#52657d" font-size="11">${escapeHtml(point.row[valueColumn])}</text><text x="${point.x}" y="202" text-anchor="middle" fill="#64748b" font-size="11">${escapeHtml(String(point.row[labelColumn]).slice(0, 14))}</text>`).join("")}</svg></div></section>`;
+				}
+				if (wantsPie) {
+					const colors = [
+						"#2563eb",
+						"#14b8a6",
+						"#f59e0b",
+						"#ef4444",
+						"#8b5cf6",
+						"#ec4899",
+						"#64748b",
+					];
+					const total =
+						values.reduce((sum, value) => sum + Math.max(0, value), 0) || 1;
+					let angle = 0;
+					const segments = values.map((value, index) => {
+						const start = angle;
+						angle += (Math.max(0, value) / total) * 360;
+						return `${colors[index % colors.length]} ${start}deg ${angle}deg`;
+					});
+					return `<section class="chart-card"><h4 class="chart-title">Grafik ${escapeHtml(valueColumn)} · Donat</h4><div class="chart-pie-layout"><div class="chart-pie" style="--pie-gradient:${segments.join(",")}"></div><div class="chart-legend">${rows
+						.map(
+							(row, index) =>
+								`<div class="chart-legend-item"><span class="chart-legend-color" style="background:${colors[index % colors.length]}"></span><span>${escapeHtml(row[labelColumn])}: <b>${escapeHtml(row[valueColumn])}</b></span></div>`,
+						)
+						.join("")}</div></div></section>`;
+				}
+				const maximum = Math.max(...values, 1);
+				return `<section class="chart-card"><h4 class="chart-title">Grafik ${escapeHtml(valueColumn)}</h4><div class="chart-bars">${rows
+					.map(
+						(row) =>
+							`<div class="chart-bar-group"><span class="chart-value">${escapeHtml(row[valueColumn])}</span><span class="chart-bar" style="height:${Math.max(4, (Number(row[valueColumn]) / maximum) * 125)}px"></span><span class="chart-label" title="${escapeHtml(row[labelColumn])}">${escapeHtml(row[labelColumn])}</span></div>`,
+					)
+					.join("")}</div></section>`;
+			}
+
+			async function updateTokens() {
+				const res = await fetch("/api/tokens");
+				const data = await res.json();
+				document.getElementById("token-count").innerText =
+					`${Number(data.usage.daily).toLocaleString("id-ID")} Token`;
+				document.getElementById("token-limit").innerText =
+					`Hari ini: ${Number(data.usage.daily).toLocaleString("id-ID")} / ${Number(data.limits.daily).toLocaleString("id-ID")} · Bulan: ${Number(data.usage.monthly).toLocaleString("id-ID")} / ${Number(data.limits.monthly).toLocaleString("id-ID")}`;
+			}
+
+			async function sendMessage() {
+				const input = document.getElementById("user-input");
+				const mode = document.getElementById("mode").value;
+				const sendButton = document.querySelector("#input-area button");
+				const text = input.value.trim();
+				if (!text) return;
+
+				input.value = "";
+				const userMessage = document.createElement("div");
+				userMessage.className = "msg user";
+				userMessage.innerHTML = `<strong>Anda:</strong><br>${escapeHtml(text)}`;
+				document.getElementById("chat-box").appendChild(userMessage);
+				sendButton.disabled = true;
+				sendButton.innerHTML = '<span class="spinner"></span> Memproses';
+				const loading = document.createElement("div");
+				loading.className = "msg assistant loading";
+				loading.innerHTML =
+					'<span class="spinner"></span> AI sedang memproses...';
+				document.getElementById("chat-box").appendChild(loading);
+				document.getElementById("chat-box").scrollTop =
+					document.getElementById("chat-box").scrollHeight;
+				try {
+					const response = await fetch("/api/chat", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ message: text, mode, conversationId }),
+					});
+					const data = await response.json();
+					if (!response.ok) throw new Error(data.error || "Permintaan gagal.");
+					loading.remove();
+					const result = document.createElement("div");
+					result.className = "msg assistant";
+					result.innerHTML = `<strong>AI Assistant:</strong><br>${formatText(data.answer)}${data.rows ? renderRows(data.rows) + renderChart(data.rows, text) : ""}`;
+					addAssistantActions(result, data.answer, data.rows);
+					document.getElementById("chat-box").appendChild(result);
+				} catch (error) {
+					loading.className = "msg assistant";
+					loading.innerHTML = `<strong>Error:</strong><br>${escapeHtml(error.message)}`;
+				} finally {
+					sendButton.disabled = false;
+					sendButton.textContent = "Kirim";
+					document.getElementById("chat-box").scrollTop =
+						document.getElementById("chat-box").scrollHeight;
+					await loadChatSessions();
+					updateTokens();
+				}
+			}
+
+			function startNewChat() {
+				conversationId = crypto.randomUUID();
+				document.getElementById("chat-box").innerHTML = "";
+				document.getElementById("user-input").focus();
+			}
+
+			document
+				.getElementById("new-chat")
+				.addEventListener("click", startNewChat);
+
+			document
+				.getElementById("upload-document")
+				.addEventListener("click", async () => {
+					const input = document.getElementById("document-file");
+					const status = document.getElementById("upload-status");
+					if (!input.files[0])
+						return (status.textContent = "Pilih file terlebih dahulu.");
+					const formData = new FormData();
+					formData.append("document", input.files[0]);
+					status.textContent = "Mengunggah...";
+					try {
+						const response = await fetch("/api/documents", {
+							method: "POST",
+							body: formData,
+						});
+						const data = await response.json();
+						if (!response.ok) throw new Error(data.error);
+						status.textContent = `${data.title} siap dicari.`;
+						input.value = "";
+					} catch (error) {
+						status.textContent = error.message;
+					}
+				});
+
+			startNewChat();
+			loadChatSessions();
+			updateTokens();
+		</script>
+	</body>
+</html>
