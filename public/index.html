@@ -144,12 +144,17 @@
 				}
 			}
 			.table-wrap {
+				display: block;
+				width: 100%;
+				max-width: 100%;
 				overflow-x: auto;
 				margin-top: 10px;
 			}
 			table {
 				border-collapse: collapse;
-				min-width: 100%;
+				width: 100%;
+				max-width: 100%;
+				min-width: 320px;
 				font-size: 12px;
 			}
 			th,
@@ -170,9 +175,9 @@
 				background: #f8fafc;
 			}
 			.msg {
-				max-width: 80%;
+				max-width: min(78%, 700px);
 				padding: 12px 16px;
-				border-radius: 8px;
+				border-radius: 18px;
 				line-height: 1.5;
 				font-size: 14px;
 				min-width: 0;
@@ -185,10 +190,11 @@
 				align-self: flex-end;
 			}
 			.assistant {
-				background: #ffffff;
+				background: #f8fafc;
 				border: 1px solid #e2e8f0;
 				color: #334155;
 				align-self: flex-start;
+				box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
 			}
 			.token-card {
 				background: #1e293b;
@@ -466,11 +472,14 @@
 				background: #ffffff;
 			}
 			.msg.assistant {
-				width: min(100%, 880px);
-				max-width: 880px;
-				padding: 18px 8px;
-				background: transparent;
-				border: 0;
+				width: min(100%, 1000px);
+				max-width: 100%;
+				padding: 14px 16px;
+				background: #f8fafc;
+				border: 1px solid #e2e8f0;
+				border-radius: 18px;
+				align-self: flex-start;
+				box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
 			}
 			.msg.user {
 				max-width: min(78%, 700px);
@@ -557,10 +566,19 @@
 				font-weight: 400;
 			}
 			.assistant-actions {
-				margin-top: 0;
-				padding-top: 0;
-				border-top: 0;
+				margin-top: 8px;
+				padding-top: 8px;
+				border-top: 1px solid #e2e8f0;
 				border-bottom: 0;
+				justify-content: flex-end;
+			}
+			.msg.assistant .table-wrap {
+				width: 100%;
+				max-width: 100%;
+			}
+			.msg.assistant table {
+				width: 100%;
+				min-width: 100%;
 			}
 			.workspace-header .document-upload {
 				border-radius: 999px;
@@ -620,6 +638,56 @@
 				text-overflow: ellipsis;
 				white-space: nowrap;
 				color: #718096;
+			}
+			.doc-selector-wrap {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				margin-left: 6px;
+				padding-left: 8px;
+				border-left: 1px solid #cbd5e1;
+			}
+			.doc-label {
+				font-size: 10px;
+				color: #475569;
+				font-weight: 600;
+				white-space: nowrap;
+			}
+			#active-doc-select {
+				padding: 4px 8px;
+				font-size: 10px;
+				border: 1px solid #cbd5e1;
+				border-radius: 6px;
+				background: #ffffff;
+				color: #1e293b;
+				max-width: 170px;
+				outline: none;
+				cursor: pointer;
+			}
+			#delete-active-doc {
+				padding: 4px 7px;
+				font-size: 10px;
+				background: #ef4444;
+				color: white;
+				border: none;
+				border-radius: 4px;
+				cursor: pointer;
+				line-height: 1;
+			}
+			#delete-active-doc:hover {
+				background: #dc2626;
+			}
+			.doc-source-tag {
+				display: inline-flex;
+				align-items: center;
+				gap: 5px;
+				margin-top: 8px;
+				padding: 3px 8px;
+				background: #e0f2fe;
+				color: #0369a1;
+				border-radius: 4px;
+				font-size: 11px;
+				font-weight: 500;
 			}
 			@media print {
 				body {
@@ -767,6 +835,13 @@
 								>PDF, TXT, MD, CSV, JSON · Maks. 20 MB</small
 							>
 						</div>
+						<div class="doc-selector-wrap" id="doc-selector-container">
+							<label for="active-doc-select" class="doc-label">Dokumen:</label>
+							<select id="active-doc-select" title="Pilih dokumen yang ingin ditanyakan">
+								<option value="all">📚 Semua Dokumen</option>
+							</select>
+							<button id="delete-active-doc" type="button" title="Hapus dokumen yang dipilih" style="display:none;">🗑️</button>
+						</div>
 					</div>
 					<span class="online-badge">● Siap digunakan</span>
 				</div>
@@ -791,17 +866,20 @@
 
 		<script>
 			let conversationId = crypto.randomUUID();
+			let activeMode = "rag";
 
 			function updateModeControls() {
-				const isRag = document.getElementById("mode").value === "rag";
+				const mode = document.getElementById("mode").value;
+				const isRag = mode === "rag";
 				document.getElementById("document-upload-panel").style.display = isRag
 					? "flex"
 					: "none";
 			}
 
-			document
-				.getElementById("mode")
-				.addEventListener("change", updateModeControls);
+			document.getElementById("mode").addEventListener("change", () => {
+				activeMode = document.getElementById("mode").value;
+				updateModeControls();
+			});
 			updateModeControls();
 
 			async function loadHistory() {
@@ -907,7 +985,9 @@
 			function renderHistoryContent(historyItem, request = "") {
 				let result = "";
 				let chart = "";
-				if (historyItem.resultJson) {
+				let sourcesTag = "";
+				const isSqlHistory = historyItem.mode === "sql";
+				if (isSqlHistory && historyItem.resultJson) {
 					try {
 						const rows = JSON.parse(historyItem.resultJson);
 						result = renderRows(rows);
@@ -915,8 +995,15 @@
 					} catch (error) {
 						result = "";
 					}
+				} else if (historyItem.resultJson) {
+					try {
+						const dataObj = JSON.parse(historyItem.resultJson);
+						if (Array.isArray(dataObj.sources) && dataObj.sources.length) {
+							sourcesTag = `<div class="doc-source-tag">📄 Referensi: ${escapeHtml(dataObj.sources.join(", "))}</div>`;
+						}
+					} catch (e) {}
 				}
-				return `${formatText(historyItem.content)}${result}${chart}`;
+				return `${formatText(historyItem.content)}${sourcesTag}${result}${chart}`;
 			}
 
 			function formatRowsForCopy(rows) {
@@ -1063,6 +1150,11 @@
 
 			function renderChart(rows, request = "") {
 				if (!Array.isArray(rows) || rows.length < 2) return "";
+				const wantsChart =
+					/\b(grafik|chart|diagram|visual|bar|line|garis|trend|tren|donat|doughnut|pie|plot)\b/i.test(
+						request,
+					);
+				if (!wantsChart) return "";
 				const columns = Object.keys(rows[0]);
 				const valueColumn = columns.find((column) =>
 					rows.every((row) => Number.isFinite(Number(row[column]))),
@@ -1141,12 +1233,77 @@
 					`Hari ini: ${Number(data.usage.daily).toLocaleString("id-ID")} / ${Number(data.limits.daily).toLocaleString("id-ID")} · Bulan: ${Number(data.usage.monthly).toLocaleString("id-ID")} / ${Number(data.limits.monthly).toLocaleString("id-ID")}`;
 			}
 
+			async function loadDocumentsList(selectedId = null) {
+				const select = document.getElementById("active-doc-select");
+				const deleteBtn = document.getElementById("delete-active-doc");
+				if (!select) return;
+				try {
+					const res = await fetch("/api/documents");
+					const docs = await res.json();
+					const currentVal = selectedId || select.value || "all";
+					select.innerHTML = '<option value="all">📚 Semua Dokumen</option>';
+					docs.forEach((doc) => {
+						const opt = document.createElement("option");
+						opt.value = doc.id;
+						opt.textContent = `📄 ${doc.title}`;
+						select.appendChild(opt);
+					});
+					if (selectedId && docs.some((d) => String(d.id) === String(selectedId))) {
+						select.value = selectedId;
+					} else if (docs.some((d) => String(d.id) === String(currentVal))) {
+						select.value = currentVal;
+					} else {
+						select.value = "all";
+					}
+					if (deleteBtn) {
+						deleteBtn.style.display = select.value !== "all" ? "inline-block" : "none";
+					}
+				} catch (err) {
+					console.warn("Gagal memuat daftar dokumen:", err);
+				}
+			}
+
+			document
+				.getElementById("active-doc-select")
+				?.addEventListener("change", (e) => {
+					const deleteBtn = document.getElementById("delete-active-doc");
+					if (deleteBtn) {
+						deleteBtn.style.display =
+							e.target.value !== "all" ? "inline-block" : "none";
+					}
+				});
+
+			document
+				.getElementById("delete-active-doc")
+				?.addEventListener("click", async () => {
+					const select = document.getElementById("active-doc-select");
+					const docId = select.value;
+					if (!docId || docId === "all") return;
+					const docTitle = select.options[select.selectedIndex].text;
+					if (!confirm(`Hapus ${docTitle} dari knowledge base?`)) return;
+					try {
+						const res = await fetch(`/api/documents/${encodeURIComponent(docId)}`, {
+							method: "DELETE",
+						});
+						const data = await res.json();
+						if (!res.ok) throw new Error(data.error || "Gagal menghapus dokumen");
+						document.getElementById("upload-status").textContent = data.message;
+						await loadDocumentsList("all");
+					} catch (err) {
+						alert(err.message);
+					}
+				});
+
 			async function sendMessage() {
 				const input = document.getElementById("user-input");
-				const mode = document.getElementById("mode").value;
+				const mode =
+					document.getElementById("mode").value === "sql" ? "sql" : "rag";
 				const sendButton = document.querySelector("#input-area button");
 				const text = input.value.trim();
 				if (!text) return;
+
+				const activeDocId =
+					document.getElementById("active-doc-select")?.value || "all";
 
 				input.value = "";
 				const userMessage = document.createElement("div");
@@ -1166,14 +1323,25 @@
 					const response = await fetch("/api/chat", {
 						method: "POST",
 						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ message: text, mode, conversationId }),
+						body: JSON.stringify({
+							message: text,
+							mode,
+							conversationId,
+							documentId: activeDocId,
+						}),
 					});
 					const data = await response.json();
 					if (!response.ok) throw new Error(data.error || "Permintaan gagal.");
 					loading.remove();
+
+					let sourcesTag = "";
+					if (Array.isArray(data.sources) && data.sources.length) {
+						sourcesTag = `<div class="doc-source-tag">📄 Referensi: ${escapeHtml(data.sources.join(", "))}</div>`;
+					}
+
 					const result = document.createElement("div");
 					result.className = "msg assistant";
-					result.innerHTML = `<strong>AI Assistant:</strong><br>${formatText(data.answer)}${data.rows ? renderRows(data.rows) + renderChart(data.rows, text) : ""}`;
+					result.innerHTML = `<strong>AI Assistant:</strong><br>${formatText(data.answer)}${sourcesTag}${data.rows ? renderRows(data.rows) + renderChart(data.rows, text) : ""}`;
 					addAssistantActions(result, data.answer, data.rows);
 					document.getElementById("chat-box").appendChild(result);
 				} catch (error) {
@@ -1204,10 +1372,20 @@
 				.addEventListener("click", async () => {
 					const input = document.getElementById("document-file");
 					const status = document.getElementById("upload-status");
-					if (!input.files[0])
-						return (status.textContent = "Pilih file terlebih dahulu.");
+					if (!input.files || !input.files[0]) {
+						status.textContent = "Pilih file terlebih dahulu.";
+						return;
+					}
+					const file = input.files[0];
+					const extension = (file.name.split(".").pop() || "").toLowerCase();
+					const supported = ["txt", "md", "csv", "json", "pdf"];
+					if (!supported.includes(extension)) {
+						status.textContent =
+							"Format yang didukung: .pdf, .txt, .md, .csv, dan .json.";
+						return;
+					}
 					const formData = new FormData();
-					formData.append("document", input.files[0]);
+					formData.append("document", file);
 					status.textContent = "Mengunggah...";
 					try {
 						const response = await fetch("/api/documents", {
@@ -1215,9 +1393,10 @@
 							body: formData,
 						});
 						const data = await response.json();
-						if (!response.ok) throw new Error(data.error);
-						status.textContent = `${data.title} siap dicari.`;
+						if (!response.ok) throw new Error(data.error || "Upload gagal.");
+						status.textContent = `✓ ${data.title} siap dicari.`;
 						input.value = "";
+						await loadDocumentsList(data.id);
 					} catch (error) {
 						status.textContent = error.message;
 					}
@@ -1225,6 +1404,7 @@
 
 			startNewChat();
 			loadChatSessions();
+			loadDocumentsList();
 			updateTokens();
 		</script>
 	</body>

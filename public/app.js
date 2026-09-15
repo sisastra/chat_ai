@@ -76,9 +76,9 @@ $("#runQuery").addEventListener("click", async () => {
 	button.firstChild.textContent = "Memproses ";
 	try {
 		showResult(
-			await api(state.mode === "rag" ? "/api/chat" : "/api/sql", {
+			await api("/api/chat", {
 				method: "POST",
-				body: JSON.stringify({ question }),
+				body: JSON.stringify({ message: question, mode: state.mode }),
 			}),
 		);
 		await refreshStatus();

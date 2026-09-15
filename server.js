@@ -14,6 +14,7 @@ import { Document } from "@langchain/core/documents";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { createRetrievalChain } from "langchain/chains/retrieval";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 
 dotenv.config();
 
@@ -32,23 +33,12 @@ const upload = multer({
 });
 
 let db;
-let vectorStore;
-const ragDocs = [
-	new Document({
-		pageContent:
-			"SOP Maintenance Generator: Pengecekan oli dilakukan setiap 100 jam kerja. Penggantian filter udara wajib setiap 3 bulan.",
-		metadata: { source: "SOP_Generator.pdf" },
-	}),
-	new Document({
-		pageContent:
-			"Prosedur Keamanan PLTU: Kontak darurat tim K3 di ekstensi 112 atau via radio kanal 4.",
-		metadata: { source: "Manual_K3.pdf" },
-	}),
-];
+let vectorStore = null;
+let ragDocs = [];
 
 // Inisialisasi model Gemini Flash yang masih tersedia di API.
 const model = new ChatGoogleGenerativeAI({
-	modelName: process.env.GEMINI_MODEL || "gemini-3.6-flash",
+	modelName: process.env.GEMINI_MODEL || "gemini-3.5-flash",
 	apiKey: process.env.GEMINI_API_KEY,
 	temperature: 0.1,
 });
@@ -139,8 +129,14 @@ async function init() {
 	if (!historyColumns.some((column) => column.name === "sql_query")) {
 		await db.exec("ALTER TABLE chat_history ADD COLUMN sql_query TEXT");
 	}
+	if (!historyColumns.some((column) => column.name === "mode")) {
+		await db.exec("ALTER TABLE chat_history ADD COLUMN mode TEXT");
+	}
 	await db.run(
 		"UPDATE chat_history SET conversation_id = 'legacy-history' WHERE conversation_id IS NULL",
+	);
+	await db.run(
+		"UPDATE chat_history SET mode = CASE WHEN sql_query IS NOT NULL THEN 'sql' ELSE 'rag' END WHERE mode IS NULL",
 	);
 
 	// Dummy data jika tabel maintenance kosong
@@ -615,31 +611,47 @@ async function init() {
 	}
 
 	// 2. Vector Store untuk RAG Dokumen
-	const uploadedDocuments = await db.all(
-		"SELECT title, content FROM documents ORDER BY id ASC",
-	);
-	for (const document of uploadedDocuments) {
-		ragDocs.push(
-			new Document({
-				pageContent: document.content,
-				metadata: { source: document.title },
-			}),
-		);
-	}
 	await rebuildVectorStore();
 
 	console.log("Database SQLite & Vector Store Siap.");
 }
 
 async function rebuildVectorStore() {
+	ragDocs = [];
 	try {
-		vectorStore = await MemoryVectorStore.fromDocuments(
-			ragDocs,
-			new GoogleGenerativeAIEmbeddings({
-				apiKey: process.env.GEMINI_API_KEY,
-				modelName: "gemini-embedding-001",
-			}),
+		const uploadedDocuments = await db.all(
+			"SELECT id, title, content FROM documents ORDER BY id ASC",
 		);
+
+		if (!uploadedDocuments || uploadedDocuments.length === 0) {
+			vectorStore = null;
+			return;
+		}
+
+		const textSplitter = new RecursiveCharacterTextSplitter({
+			chunkSize: 900,
+			chunkOverlap: 120,
+		});
+
+		for (const doc of uploadedDocuments) {
+			const chunks = await textSplitter.createDocuments(
+				[doc.content],
+				[{ source: doc.title, docId: doc.id }],
+			);
+			ragDocs.push(...chunks);
+		}
+
+		if (ragDocs.length > 0) {
+			vectorStore = await MemoryVectorStore.fromDocuments(
+				ragDocs,
+				new GoogleGenerativeAIEmbeddings({
+					apiKey: process.env.GEMINI_API_KEY,
+					modelName: "gemini-embedding-001",
+				}),
+			);
+		} else {
+			vectorStore = null;
+		}
 	} catch (error) {
 		console.warn(
 			`Vector Store Gemini tidak tersedia, memakai retrieval lokal: ${error.message}`,
@@ -648,12 +660,62 @@ async function rebuildVectorStore() {
 	}
 }
 
+function sanitizeRagAnswer(text) {
+	if (typeof text !== "string") return "";
+	return text.trim();
+}
+
 app.get("/api/documents", async (req, res) => {
 	const documents = await db.all(
-		"SELECT id, title, created_at FROM documents ORDER BY id DESC",
+		"SELECT id, title, length(content) AS size, created_at FROM documents ORDER BY id DESC",
 	);
 	res.json(documents);
 });
+
+app.delete("/api/documents/:id", async (req, res) => {
+	try {
+		const { id } = req.params;
+		const doc = await db.get("SELECT id, title FROM documents WHERE id = ?", id);
+		if (!doc) {
+			return res.status(404).json({ error: "Dokumen tidak ditemukan." });
+		}
+		await db.run("DELETE FROM documents WHERE id = ?", id);
+		await rebuildVectorStore();
+		res.json({ message: `Dokumen "${doc.title}" berhasil dihapus.` });
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+});
+
+async function extractDocumentText(file) {
+	const extension = (file.originalname.split(".").pop() || "").toLowerCase();
+	const fileName = file.originalname;
+
+	if (extension === "pdf") {
+		try {
+			const parser = new PDFParse({ data: file.buffer });
+			const parsed = await parser.getText();
+			await parser.destroy();
+			const content = (parsed?.text || "").trim();
+			if (!content) {
+				throw new Error(
+					`PDF "${fileName}" tidak berisi teks yang dapat dibaca. Gunakan PDF searchable atau file .txt/.md/.csv/.json.`,
+				);
+			}
+			return content;
+		} catch (error) {
+			throw new Error(
+				`Gagal membaca PDF "${fileName}". Pastikan file bukan hasil scan gambar dan memiliki teks yang bisa dibaca.`,
+			);
+		}
+	}
+
+	const content = file.buffer.toString("utf8").trim();
+	if (!content) {
+		throw new Error(`Dokumen "${fileName}" kosong atau tidak bisa dibaca.`);
+	}
+	return content;
+}
 
 app.post("/api/documents", upload.single("document"), async (req, res) => {
 	try {
@@ -662,7 +724,9 @@ app.post("/api/documents", upload.single("document"), async (req, res) => {
 				.status(400)
 				.json({ error: "Pilih file dokumen terlebih dahulu." });
 		}
-		const extension = req.file.originalname.split(".").pop().toLowerCase();
+		const extension = (
+			req.file.originalname.split(".").pop() || ""
+		).toLowerCase();
 		const supportedExtensions = ["txt", "md", "csv", "json", "pdf"];
 		if (!supportedExtensions.includes(extension)) {
 			return res.status(400).json({
@@ -670,26 +734,35 @@ app.post("/api/documents", upload.single("document"), async (req, res) => {
 			});
 		}
 		const title = req.file.originalname;
-		let content;
-		if (extension === "pdf") {
-			const parser = new PDFParse({ data: req.file.buffer });
-			const parsed = await parser.getText();
-			await parser.destroy();
-			content = parsed.text.trim();
-		} else {
-			content = req.file.buffer.toString("utf8").trim();
-		}
-		if (!content) return res.status(400).json({ error: "Dokumen kosong." });
-		await db.run(
-			"INSERT INTO documents (title, content) VALUES (?, ?)",
+		const content = await extractDocumentText(req.file);
+
+		// Hindari duplikasi file identik
+		const existing = await db.get(
+			"SELECT id FROM documents WHERE title = ? AND length(content) = ?",
 			title,
-			content,
+			content.length,
 		);
-		ragDocs.push(
-			new Document({ pageContent: content, metadata: { source: title } }),
-		);
+
+		let docId;
+		if (existing) {
+			await db.run(
+				"UPDATE documents SET content = ?, created_at = CURRENT_TIMESTAMP WHERE id = ?",
+				content,
+				existing.id,
+			);
+			docId = existing.id;
+		} else {
+			const result = await db.run(
+				"INSERT INTO documents (title, content) VALUES (?, ?)",
+				title,
+				content,
+			);
+			docId = result.lastID;
+		}
+
 		await rebuildVectorStore();
 		res.status(201).json({
+			id: docId,
 			title,
 			message: "Dokumen berhasil ditambahkan ke knowledge base.",
 		});
@@ -701,10 +774,14 @@ app.post("/api/documents", upload.single("document"), async (req, res) => {
 // API Chat Endpoint
 app.post("/api/chat", async (req, res) => {
 	try {
-		const { message, mode } = req.body;
+		const { message, mode, question, documentId, docId } = req.body;
+		const rawMode = String(mode ?? "").toLowerCase();
+		const userMessage = message ?? question ?? "";
+		const resolvedMode = rawMode === "sql" ? "sql" : "rag";
+		const selectedDocId = documentId || docId || null;
 		const conversationId = req.body.conversationId || randomUUID();
 		const usage = await getTokenUsage();
-		const requestReserve = Math.ceil(String(message || "").length / 4) + 1000;
+		const requestReserve = Math.ceil(String(userMessage).length / 4) + 1000;
 		if (usage.daily + requestReserve > DAILY_TOKEN_LIMIT) {
 			return res.status(429).json({
 				error: `Limit token harian tercapai. Terpakai ${usage.daily.toLocaleString("id-ID")} dari ${DAILY_TOKEN_LIMIT.toLocaleString("id-ID")} token.`,
@@ -723,55 +800,130 @@ app.post("/api/chat", async (req, res) => {
 		// Simpan input user
 		await db.run(
 			"INSERT INTO chat_history (role, content, conversation_id) VALUES ('user', ?, ?)",
-			[message, conversationId],
+			[userMessage, conversationId],
 		);
 
 		let answer = "";
 		let rows = null;
 		let sqlQuery = null;
+		let sources = [];
 
-		if (mode === "rag") {
+		if (resolvedMode === "rag") {
 			// MODE RAG (Cek Dokumen)
-			try {
-				const prompt = ChatPromptTemplate.fromTemplate(`
-					Jawab pertanyaan berdasarkan konteks dokumen berikut saja:
-					<context>{context}</context>
-					Pertanyaan: {input}
-				`);
+			if (ragDocs.length === 0) {
+				answer =
+					"Belum ada dokumen yang diunggah ke knowledge base. Silakan unggah dokumen (.pdf, .txt, .md, .csv, .json) terlebih dahulu melalui panel Dokumen RAG di atas.";
+			} else {
+				try {
+					let contextDocs = [];
+					const isSpecificDoc =
+						selectedDocId && selectedDocId !== "all" && selectedDocId !== "";
 
-				const combineDocsChain = await createStuffDocumentsChain({
-					llm: model,
-					prompt,
-				});
-				const retrievalChain = await createRetrievalChain({
-					retriever: vectorStore.asRetriever(),
-					combineDocsChain,
-				});
+					if (isSpecificDoc) {
+						const numericId = Number(selectedDocId);
+						const docChunks = ragDocs.filter(
+							(d) => d.metadata.docId === numericId,
+						);
 
-				const response = await retrievalChain.invoke({ input: message });
-				answer = response.answer;
-			} catch (error) {
-				const normalizedMessage = message.toLowerCase();
-				const matches = ragDocs.filter((doc) =>
-					doc.pageContent
-						.toLowerCase()
-						.split(/\W+/)
-						.some(
-							(word) => word.length > 3 && normalizedMessage.includes(word),
+						if (docChunks.length === 0) {
+							contextDocs = ragDocs.slice(0, 6);
+						} else if (docChunks.length <= 8) {
+							contextDocs = docChunks;
+						} else if (vectorStore) {
+							const retriever = vectorStore.asRetriever({
+								filter: (doc) => doc.metadata.docId === numericId,
+								k: 8,
+							});
+							contextDocs = await retriever.invoke(userMessage);
+						} else {
+							contextDocs = docChunks.slice(0, 8);
+						}
+					} else {
+						if (vectorStore) {
+							const retriever = vectorStore.asRetriever({ k: 6 });
+							contextDocs = await retriever.invoke(userMessage);
+						} else {
+							const normalizedMessage = userMessage.toLowerCase();
+							const matches = ragDocs.filter((doc) =>
+								doc.pageContent
+									.toLowerCase()
+									.split(/\W+/)
+									.some(
+										(word) =>
+											word.length > 3 && normalizedMessage.includes(word),
+									),
+							);
+							contextDocs = matches.length
+								? matches.slice(0, 6)
+								: ragDocs.slice(0, 6);
+						}
+					}
+
+					sources = [
+						...new Set(
+							contextDocs
+								.map((d) => d.metadata?.source)
+								.filter(Boolean),
 						),
-				);
-				const context = (matches.length ? matches : ragDocs)
-					.map((doc) => `${doc.metadata.source}: ${doc.pageContent}`)
-					.join("\n");
-				answer = `Mode retrieval lokal aktif karena embedding Gemini tidak tersedia.\n\n${context}`;
-				console.warn(
-					`RAG Gemini gagal, fallback lokal dipakai: ${error.message}`,
-				);
+					];
+
+					const formattedContext = contextDocs
+						.map(
+							(d) =>
+								`[Dokumen: ${d.metadata?.source || "Dokumen"}]\n${d.pageContent}`,
+						)
+						.join("\n\n---\n\n");
+
+					const prompt = ChatPromptTemplate.fromMessages([
+						[
+							"system",
+							"Anda adalah asisten AI yang cerdas, teliti, dan ramah yang bertugas menganalisis dokumen. Jawab pertanyaan pengguna HANYA dalam bahasa natural (Bahasa Indonesia) berdasarkan dokumen yang diberikan. DILARANG KERAS menghasilkan kueri SQL, perintah SELECT/database, atau format kode database apapun.",
+						],
+						[
+							"human",
+							"Konteks Dokumen:\n<context>\n{context}\n</context>\n\nPertanyaan Pengguna: {input}\n\nJawablah berdasarkan isi dokumen di atas secara jelas, informatif, dan terstruktur:",
+						],
+					]);
+
+					const chain = prompt.pipe(model);
+					const response = await chain.invoke({
+						context: formattedContext,
+						input: userMessage,
+					});
+
+					answer = sanitizeRagAnswer(response.content || "");
+				} catch (error) {
+					console.warn(`RAG processing error: ${error.message}`);
+					try {
+						const fallbackContext = ragDocs
+							.slice(0, 5)
+							.map((d) => `[${d.metadata?.source}]: ${d.pageContent}`)
+							.join("\n\n");
+						const fallbackPrompt = ChatPromptTemplate.fromMessages([
+							[
+								"system",
+								"Anda adalah asisten AI yang bertugas menganalisis dokumen. Jawablah hanya dalam bahasa natural berdasarkan konteks dokumen. Jangan membuat kode SQL.",
+							],
+							[
+								"human",
+								"Isi Dokumen:\n{context}\n\nPertanyaan: {input}",
+							],
+						]);
+						const fallbackChain = fallbackPrompt.pipe(model);
+						const resFallback = await fallbackChain.invoke({
+							context: fallbackContext,
+							input: userMessage,
+						});
+						answer = sanitizeRagAnswer(resFallback.content || "");
+					} catch (fallbackErr) {
+						answer = `Maaf, terjadi kesalahan saat memproses dokumen: ${error.message}`;
+					}
+				}
 			}
 		} else {
 			// MODE SQL (Cari Data DB)
 			const schemaRows = await db.all(
-				"SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT IN ('chat_history', 'token_usage') ORDER BY name",
+				"SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT IN ('chat_history', 'token_usage', 'documents') ORDER BY name",
 			);
 			const schema = schemaRows.map((table) => table.sql).join("\n");
 			const prompt = ChatPromptTemplate.fromMessages([
@@ -783,7 +935,7 @@ app.post("/api/chat", async (req, res) => {
 			]);
 
 			const sqlChain = prompt.pipe(model);
-			const sqlResponse = await sqlChain.invoke({ question: message });
+			const sqlResponse = await sqlChain.invoke({ question: userMessage });
 			sqlQuery = sqlResponse.content.trim().replace(/```sql|```/g, "");
 
 			try {
@@ -794,21 +946,34 @@ app.post("/api/chat", async (req, res) => {
 			}
 		}
 
+		if (resolvedMode === "rag") {
+			sqlQuery = null;
+			rows = null;
+		}
+
 		// Simpan respon AI
 		await db.run(
-			"INSERT INTO chat_history (role, content, conversation_id, result_json, sql_query) VALUES ('assistant', ?, ?, ?, ?)",
-			[answer, conversationId, rows ? JSON.stringify(rows) : null, sqlQuery],
+			"INSERT INTO chat_history (role, content, conversation_id, result_json, sql_query, mode) VALUES ('assistant', ?, ?, ?, ?, ?)",
+			[
+				answer,
+				conversationId,
+				rows ? JSON.stringify(rows) : (sources.length ? JSON.stringify({ sources }) : null),
+				sqlQuery,
+				resolvedMode,
+			],
 		);
 
 		// Estimasi Token Usage
-		const estimatedTokens = Math.round((message.length + answer.length) / 4);
+		const estimatedTokens = Math.round(
+			(userMessage.length + answer.length) / 4,
+		);
 		await db.run(
 			"INSERT INTO token_usage (total_tokens, api_key_id) VALUES (?, ?)",
 			estimatedTokens,
 			API_KEY_ID,
 		);
 
-		res.json({ answer, conversationId, sqlQuery, rows });
+		res.json({ answer, conversationId, sqlQuery, rows, sources });
 	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}
@@ -818,11 +983,11 @@ app.post("/api/chat", async (req, res) => {
 app.get("/api/history", async (req, res) => {
 	const history = req.query.conversationId
 		? await db.all(
-				"SELECT role, content, result_json AS resultJson, sql_query AS sqlQuery, created_at FROM chat_history WHERE conversation_id = ? ORDER BY id ASC",
+				"SELECT role, content, result_json AS resultJson, sql_query AS sqlQuery, COALESCE(mode, 'rag') AS mode, created_at FROM chat_history WHERE conversation_id = ? ORDER BY id ASC",
 				req.query.conversationId,
 			)
 		: await db.all(
-				"SELECT role, content, result_json AS resultJson, sql_query AS sqlQuery, created_at FROM chat_history ORDER BY id ASC",
+				"SELECT role, content, result_json AS resultJson, sql_query AS sqlQuery, COALESCE(mode, 'rag') AS mode, created_at FROM chat_history ORDER BY id ASC",
 			);
 	res.json(history);
 });
