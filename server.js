@@ -38,7 +38,7 @@ let ragDocs = [];
 
 // Inisialisasi model Gemini Flash yang masih tersedia di API.
 const model = new ChatGoogleGenerativeAI({
-	modelName: process.env.GEMINI_MODEL || "gemini-3.5-flash",
+	modelName: process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
 	apiKey: process.env.GEMINI_API_KEY,
 	temperature: 0.1,
 });
@@ -774,7 +774,10 @@ app.post("/api/documents", upload.single("document"), async (req, res) => {
 // API Chat Endpoint
 app.post("/api/chat", async (req, res) => {
 	try {
-		const { message, mode, question, documentId, docId } = req.body;
+		const { message, mode, question, documentId, docId, stream: clientStream } = req.body;
+		const isStream =
+			clientStream === true ||
+			req.headers.accept?.includes("text/event-stream");
 		const rawMode = String(mode ?? "").toLowerCase();
 		const userMessage = message ?? question ?? "";
 		const resolvedMode = rawMode === "sql" ? "sql" : "rag";
@@ -797,6 +800,13 @@ app.post("/api/chat", async (req, res) => {
 			});
 		}
 
+		if (isStream) {
+			res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+			res.setHeader("Cache-Control", "no-cache, no-transform");
+			res.setHeader("Connection", "keep-alive");
+			res.flushHeaders?.();
+		}
+
 		// Simpan input user
 		await db.run(
 			"INSERT INTO chat_history (role, content, conversation_id) VALUES ('user', ?, ?)",
@@ -813,6 +823,13 @@ app.post("/api/chat", async (req, res) => {
 			if (ragDocs.length === 0) {
 				answer =
 					"Belum ada dokumen yang diunggah ke knowledge base. Silakan unggah dokumen (.pdf, .txt, .md, .csv, .json) terlebih dahulu melalui panel Dokumen RAG di atas.";
+				if (isStream) {
+					res.write(`data: ${JSON.stringify({ chunk: answer })}\n\n`);
+					res.write(
+						`data: ${JSON.stringify({ done: true, answer, sources: [], conversationId })}\n\n`,
+					);
+					return res.end();
+				}
 			} else {
 				try {
 					let contextDocs = [];
@@ -828,6 +845,7 @@ app.post("/api/chat", async (req, res) => {
 						if (docChunks.length === 0) {
 							contextDocs = ragDocs.slice(0, 6);
 						} else if (docChunks.length <= 8) {
+							// LANGSUNG MEMORI: Skip ekstra network roundtrip ke embeddings API
 							contextDocs = docChunks;
 						} else if (vectorStore) {
 							const retriever = vectorStore.asRetriever({
@@ -886,12 +904,31 @@ app.post("/api/chat", async (req, res) => {
 					]);
 
 					const chain = prompt.pipe(model);
-					const response = await chain.invoke({
-						context: formattedContext,
-						input: userMessage,
-					});
 
-					answer = sanitizeRagAnswer(response.content || "");
+					if (isStream) {
+						const streamResponse = await chain.stream({
+							context: formattedContext,
+							input: userMessage,
+						});
+						for await (const chunk of streamResponse) {
+							const textChunk =
+								typeof chunk.content === "string"
+									? chunk.content
+									: chunk.content?.[0]?.text || "";
+							if (textChunk) {
+								answer += textChunk;
+								res.write(`data: ${JSON.stringify({ chunk: textChunk })}\n\n`);
+							}
+						}
+					} else {
+						const response = await chain.invoke({
+							context: formattedContext,
+							input: userMessage,
+						});
+						answer = response.content || "";
+					}
+
+					answer = sanitizeRagAnswer(answer);
 				} catch (error) {
 					console.warn(`RAG processing error: ${error.message}`);
 					try {
@@ -910,13 +947,34 @@ app.post("/api/chat", async (req, res) => {
 							],
 						]);
 						const fallbackChain = fallbackPrompt.pipe(model);
-						const resFallback = await fallbackChain.invoke({
-							context: fallbackContext,
-							input: userMessage,
-						});
-						answer = sanitizeRagAnswer(resFallback.content || "");
+						if (isStream) {
+							const fallbackStream = await fallbackChain.stream({
+								context: fallbackContext,
+								input: userMessage,
+							});
+							for await (const chunk of fallbackStream) {
+								const textChunk =
+									typeof chunk.content === "string"
+										? chunk.content
+										: chunk.content?.[0]?.text || "";
+								if (textChunk) {
+									answer += textChunk;
+									res.write(`data: ${JSON.stringify({ chunk: textChunk })}\n\n`);
+								}
+							}
+						} else {
+							const resFallback = await fallbackChain.invoke({
+								context: fallbackContext,
+								input: userMessage,
+							});
+							answer = resFallback.content || "";
+						}
+						answer = sanitizeRagAnswer(answer);
 					} catch (fallbackErr) {
 						answer = `Maaf, terjadi kesalahan saat memproses dokumen: ${error.message}`;
+						if (isStream) {
+							res.write(`data: ${JSON.stringify({ chunk: answer })}\n\n`);
+						}
 					}
 				}
 			}
@@ -929,7 +987,13 @@ app.post("/api/chat", async (req, res) => {
 			const prompt = ChatPromptTemplate.fromMessages([
 				[
 					"system",
-					`Anda ahli SQL SQLite. Berdasarkan skema berikut:\n${schema}\nUbah pertanyaan pengguna menjadi kueri SQL SQLite MURNI tanpa markdown/penjelasan.`,
+					`Anda adalah ahli SQL SQLite untuk analisis dan visualisasi data. Berdasarkan skema database berikut:
+${schema}
+
+Instruksi:
+1. Ubah pertanyaan/permintaan pengguna menjadi kueri SQL SQLite MURNI tanpa markdown dan tanpa penjelasan apapun.
+2. Jika pengguna meminta "grafik", "chart", "diagram", "visualisasi", "rekap", atau "tren", buatlah kueri agregasi data yang relevan (menggunakan GROUP BY, COUNT, SUM, AVG, dll.) yang menghasilkan minimal 1 kolom kategori/label dan 1 kolom angka/nilai numerik agar dapat langsung divisualisasikan menjadi grafik oleh antarmuka.
+3. Hasilkan query SQL yang valid dan dapat langsung dieksekusi.`,
 				],
 				["human", "{question}"],
 			]);
@@ -973,9 +1037,21 @@ app.post("/api/chat", async (req, res) => {
 			API_KEY_ID,
 		);
 
-		res.json({ answer, conversationId, sqlQuery, rows, sources });
+		if (isStream) {
+			res.write(
+				`data: ${JSON.stringify({ done: true, answer, conversationId, sqlQuery, rows, sources })}\n\n`,
+			);
+			res.end();
+		} else {
+			res.json({ answer, conversationId, sqlQuery, rows, sources });
+		}
 	} catch (error) {
-		res.status(500).json({ error: error.message });
+		if (!res.headersSent) {
+			res.status(500).json({ error: error.message });
+		} else {
+			res.write(`data: ${JSON.stringify({ error: error.message, done: true })}\n\n`);
+			res.end();
+		}
 	}
 });
 

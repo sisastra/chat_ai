@@ -1312,41 +1312,84 @@
 				document.getElementById("chat-box").appendChild(userMessage);
 				sendButton.disabled = true;
 				sendButton.innerHTML = '<span class="spinner"></span> Memproses';
-				const loading = document.createElement("div");
-				loading.className = "msg assistant loading";
-				loading.innerHTML =
-					'<span class="spinner"></span> AI sedang memproses...';
-				document.getElementById("chat-box").appendChild(loading);
+
+				const assistantMsg = document.createElement("div");
+				assistantMsg.className = "msg assistant";
+				assistantMsg.innerHTML = `<strong>AI Assistant:</strong><br><span class="assistant-content"><span class="spinner"></span> AI sedang memproses...</span>`;
+				document.getElementById("chat-box").appendChild(assistantMsg);
+				const contentSpan = assistantMsg.querySelector(".assistant-content");
 				document.getElementById("chat-box").scrollTop =
 					document.getElementById("chat-box").scrollHeight;
+
 				try {
 					const response = await fetch("/api/chat", {
 						method: "POST",
-						headers: { "Content-Type": "application/json" },
+						headers: {
+							"Content-Type": "application/json",
+							"Accept": "text/event-stream",
+						},
 						body: JSON.stringify({
 							message: text,
 							mode,
 							conversationId,
 							documentId: activeDocId,
+							stream: true,
 						}),
 					});
-					const data = await response.json();
-					if (!response.ok) throw new Error(data.error || "Permintaan gagal.");
-					loading.remove();
 
-					let sourcesTag = "";
-					if (Array.isArray(data.sources) && data.sources.length) {
-						sourcesTag = `<div class="doc-source-tag">📄 Referensi: ${escapeHtml(data.sources.join(", "))}</div>`;
+					if (!response.ok) {
+						const errData = await response.json().catch(() => ({}));
+						throw new Error(errData.error || `Error ${response.status}: Permintaan gagal.`);
 					}
 
-					const result = document.createElement("div");
-					result.className = "msg assistant";
-					result.innerHTML = `<strong>AI Assistant:</strong><br>${formatText(data.answer)}${sourcesTag}${data.rows ? renderRows(data.rows) + renderChart(data.rows, text) : ""}`;
-					addAssistantActions(result, data.answer, data.rows);
-					document.getElementById("chat-box").appendChild(result);
+					let accumulatedText = "";
+					let finalData = null;
+
+					if (response.headers.get("content-type")?.includes("text/event-stream")) {
+						const reader = response.body.getReader();
+						const decoder = new TextDecoder();
+						let buffer = "";
+
+						while (true) {
+							const { done, value } = await reader.read();
+							if (done) break;
+							buffer += decoder.decode(value, { stream: true });
+							const lines = buffer.split("\n\n");
+							buffer = lines.pop() || "";
+
+							for (const line of lines) {
+								if (!line.startsWith("data: ")) continue;
+								try {
+									const data = JSON.parse(line.slice(6));
+									if (data.error) throw new Error(data.error);
+									if (data.chunk) {
+										accumulatedText += data.chunk;
+										contentSpan.innerHTML = formatText(accumulatedText);
+										document.getElementById("chat-box").scrollTop =
+											document.getElementById("chat-box").scrollHeight;
+									}
+									if (data.done) {
+										finalData = data;
+									}
+								} catch (e) {
+									if (e.message && !e.message.includes("JSON")) throw e;
+								}
+							}
+						}
+					} else {
+						finalData = await response.json();
+						accumulatedText = finalData.answer || "";
+					}
+
+					let sourcesTag = "";
+					if (Array.isArray(finalData?.sources) && finalData.sources.length) {
+						sourcesTag = `<div class="doc-source-tag">📄 Referensi: ${escapeHtml(finalData.sources.join(", "))}</div>`;
+					}
+
+					contentSpan.innerHTML = `${formatText(accumulatedText || finalData?.answer || "")}${sourcesTag}${finalData?.rows ? renderRows(finalData.rows) + renderChart(finalData.rows, text) : ""}`;
+					addAssistantActions(assistantMsg, accumulatedText || finalData?.answer || "", finalData?.rows);
 				} catch (error) {
-					loading.className = "msg assistant";
-					loading.innerHTML = `<strong>Error:</strong><br>${escapeHtml(error.message)}`;
+					assistantMsg.innerHTML = `<strong>Error:</strong><br>${escapeHtml(error.message)}`;
 				} finally {
 					sendButton.disabled = false;
 					sendButton.textContent = "Kirim";
