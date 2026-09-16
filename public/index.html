@@ -139,8 +139,23 @@
       50% { transform: scale(1.05); opacity: 0.4; }
       100% { transform: scale(0.95); opacity: 0.8; }
     }
-    .animate-pulse-slow {
-      animation: pulse-ring 3s infinite ease-in-out;
+    /* Orbit Ring & Glow Animations for Login */
+    @keyframes orbit-cw {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes orbit-ccw {
+      0% { transform: rotate(360deg); }
+      100% { transform: rotate(0deg); }
+    }
+    .animate-orbit-cw {
+      animation: orbit-cw 4s linear infinite;
+    }
+    .animate-orbit-ccw {
+      animation: orbit-ccw 2.2s linear infinite;
+    }
+    .shadow-glow-teal {
+      box-shadow: 0 0 25px -5px rgba(0, 201, 167, 0.35);
     }
   </style>
 </head>
@@ -227,19 +242,24 @@
         </div>
 
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2.5">
-            <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-pln-navy to-pln-blue text-white flex items-center justify-center font-extrabold text-xs shadow-sm">
+          <div class="flex items-center gap-2.5 overflow-hidden">
+            <div id="user-avatar-initials" class="w-8 h-8 rounded-full bg-gradient-to-tr from-pln-navy to-pln-blue text-white flex items-center justify-center font-extrabold text-xs shadow-sm shrink-0">
               IP
             </div>
-            <div>
-              <div class="text-xs font-bold text-slate-700">Tim Divisi EBT</div>
-              <div class="text-[10px] text-slate-400">ebt@plnindonesiapower.co.id</div>
+            <div class="truncate">
+              <div id="user-display-name" class="text-xs font-bold text-slate-700 truncate">Tim Divisi EBT</div>
+              <div id="user-display-email" class="text-[10px] text-slate-400 truncate">ebt@plnindonesiapower.co.id</div>
             </div>
           </div>
-          <button onclick="togglePrivacyShield()" id="privacy-toggle-btn" title="Toggle Data Privacy Shield" class="p-1.5 text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition flex items-center gap-1 text-[10px] font-semibold">
-            <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
-            <span class="hidden xl:inline">Shield</span>
-          </button>
+          <div class="flex items-center gap-1 shrink-0">
+            <button onclick="togglePrivacyShield()" id="privacy-toggle-btn" title="Toggle Data Privacy Shield" class="p-1.5 text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition flex items-center gap-1 text-[10px] font-semibold">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+              <span class="hidden xl:inline">Shield</span>
+            </button>
+            <button onclick="handleLogout()" title="Keluar / Ganti Akun" class="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition border border-transparent hover:border-rose-200">
+              <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -611,6 +631,81 @@
           <span>Upload & Indeks</span>
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- LOGIN & AUTHENTICATION MODAL -->
+  <div id="login-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md transition-all duration-500">
+    <div class="relative w-full max-w-md mx-4 p-7 sm:p-8 bg-white/95 rounded-3xl border border-white/60 shadow-2xl space-y-6 overflow-hidden">
+      
+      <!-- Ambient Decorative Glow -->
+      <div class="absolute -top-24 -left-24 w-48 h-48 bg-pln-blue/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-pln-teal/20 rounded-full blur-3xl pointer-events-none"></div>
+
+      <!-- VIEW 1: LOGIN FORM -->
+      <div id="login-form-view" class="space-y-5 relative">
+        <div class="text-center space-y-2">
+          <div class="inline-flex p-3 bg-white rounded-2xl border border-slate-100 shadow-sm mb-1">
+            <img src="/logo-pln-renewables.png" alt="PLN Indonesia Power Renewables" class="h-10 w-auto object-contain" />
+          </div>
+          <div>
+            <h2 class="text-lg font-extrabold text-pln-navy tracking-tight">Portal Akses Renewables AI</h2>
+            <p class="text-xs text-slate-500">Masuk dengan akun korporat PT PLN Indonesia Power</p>
+          </div>
+        </div>
+
+        <form onsubmit="handleLoginSubmit(event)" class="space-y-3.5">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-700 mb-1">Email Korporat / NIP</label>
+            <div class="relative">
+              <i data-lucide="mail" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
+              <input id="login-email" type="text" required value="ebt@plnindonesiapower.co.id" placeholder="nama@plnindonesiapower.co.id" class="w-full bg-slate-50 border border-slate-200 text-xs rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:border-pln-blue focus:bg-white transition" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-700 mb-1">Kata Sandi / PIN SSO</label>
+            <div class="relative">
+              <i data-lucide="lock" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
+              <input id="login-password" type="password" required value="••••••••" placeholder="Masukkan kata sandi" class="w-full bg-slate-50 border border-slate-200 text-xs rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:border-pln-blue focus:bg-white transition" />
+            </div>
+          </div>
+
+          <button id="btn-login-submit" type="submit" class="w-full py-2.5 px-4 rounded-xl bg-pln-blue hover:bg-pln-navy text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm hover:shadow-md active:scale-98 transition mt-3">
+            <span>Masuk ke Sistem AI</span>
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+          </button>
+        </form>
+      </div>
+
+      <!-- VIEW 2: FUTURISTIC HOLOGRAPHIC LOADING ANIMATION -->
+      <div id="login-loading-view" style="display:none;" class="py-6 space-y-6 text-center relative">
+        <!-- Holographic Energy Core -->
+        <div class="relative w-28 h-28 mx-auto flex items-center justify-center">
+          <div class="absolute inset-0 rounded-full border-2 border-dashed border-pln-blue/40 animate-orbit-cw"></div>
+          <div class="absolute inset-2 rounded-full border-2 border-t-pln-teal border-r-pln-yellow border-b-transparent border-l-transparent animate-orbit-ccw"></div>
+          <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-pln-navy via-pln-blue to-pln-teal flex items-center justify-center text-white shadow-glow-cyan animate-pulse">
+            <i data-lucide="zap" class="w-8 h-8 text-pln-yellow fill-pln-yellow"></i>
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <h3 id="auth-status-title" class="text-sm font-extrabold text-pln-navy tracking-tight">Mengautentikasi Kredensial...</h3>
+          <p id="auth-status-desc" class="text-[11px] text-slate-500 h-5 transition-all">Memverifikasi Single Sign-On korporat PLN IP</p>
+        </div>
+
+        <!-- Animated Progress Bar -->
+        <div class="space-y-1.5 px-2">
+          <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200/80 p-0.5 shadow-inner">
+            <div id="auth-progress-bar" class="h-full bg-gradient-to-r from-pln-navy via-pln-blue to-pln-teal rounded-full w-0 transition-all duration-300 ease-out shadow-glow-cyan"></div>
+          </div>
+          <div class="flex justify-between text-[9.5px] font-bold text-slate-400 px-1">
+            <span id="auth-step-text">Langkah 1 dari 3</span>
+            <span id="auth-percent-text">15%</span>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -1845,11 +1940,131 @@
       }
     }
 
-    // Initial Load
-    startNewChat();
-    loadChatSessions();
-    loadDocumentsList();
-    updateTokens();
+    // -----------------------------------------------------------------
+    // AUTHENTICATION & LOGIN WORKFLOW WITH HOLOGRAPHIC LOADING ANIMATION
+    // -----------------------------------------------------------------
+    function initAuth() {
+      const savedUser = localStorage.getItem("renewables_ai_user");
+      const loginModal = document.getElementById("login-modal");
+      if (savedUser) {
+        try {
+          const user = JSON.parse(savedUser);
+          updateUserProfileUI(user);
+          loginModal.style.display = "none";
+        } catch (e) {
+          showLoginModal();
+        }
+      } else {
+        showLoginModal();
+      }
+    }
+
+    function showLoginModal() {
+      const loginModal = document.getElementById("login-modal");
+      const formView = document.getElementById("login-form-view");
+      const loadingView = document.getElementById("login-loading-view");
+      loginModal.style.display = "flex";
+      loginModal.style.opacity = "1";
+      formView.style.display = "block";
+      loadingView.style.display = "none";
+      lucide.createIcons();
+    }
+
+    function updateUserProfileUI(user) {
+      if (!user) return;
+      const nameEl = document.getElementById("user-display-name");
+      const emailEl = document.getElementById("user-display-email");
+      const avatarEl = document.getElementById("user-avatar-initials");
+      
+      if (nameEl) nameEl.textContent = user.division || user.name || "Tim Divisi EBT";
+      if (emailEl) emailEl.textContent = user.email || "ebt@plnindonesiapower.co.id";
+      
+      if (avatarEl) {
+        const initials = (user.division || user.name || "IP")
+          .split(" ")
+          .map(w => w[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase() || "IP";
+        avatarEl.textContent = initials;
+      }
+    }
+
+    function handleLoginSubmit(event) {
+      if (event) event.preventDefault();
+      const email = document.getElementById("login-email").value.trim() || "ebt@plnindonesiapower.co.id";
+      const division = "Tim Divisi EBT";
+      startLoginAnimation({ email, division });
+    }
+
+    function startLoginAnimation(userData) {
+      const formView = document.getElementById("login-form-view");
+      const loadingView = document.getElementById("login-loading-view");
+      const titleEl = document.getElementById("auth-status-title");
+      const descEl = document.getElementById("auth-status-desc");
+      const progressBar = document.getElementById("auth-progress-bar");
+      const stepText = document.getElementById("auth-step-text");
+      const percentText = document.getElementById("auth-percent-text");
+      const loginModal = document.getElementById("login-modal");
+
+      formView.style.display = "none";
+      loadingView.style.display = "block";
+      lucide.createIcons();
+
+      // Step 1: SSO Verification
+      titleEl.textContent = "Mengautentikasi Kredensial SSO...";
+      descEl.textContent = "Memverifikasi Single Sign-On korporat PLN IP...";
+      progressBar.style.width = "35%";
+      stepText.textContent = "Langkah 1 dari 3";
+      percentText.textContent = "35%";
+
+      // Step 2: Privacy Shield Setup (after 600ms)
+      setTimeout(() => {
+        titleEl.textContent = "Menginisialisasi Privacy Shield...";
+        descEl.textContent = "Mengaktifkan Data Protection Guardrails & Vector Isolation...";
+        progressBar.style.width = "75%";
+        stepText.textContent = "Langkah 2 dari 3";
+        percentText.textContent = "75%";
+      }, 650);
+
+      // Step 3: Workspace Preparation (after 1250ms)
+      setTimeout(() => {
+        titleEl.textContent = "Mempersiapkan Workspace AI...";
+        descEl.textContent = "Menghubungkan ke Gemini Flash & On-Premise Engine...";
+        progressBar.style.width = "100%";
+        stepText.textContent = "Langkah 3 dari 3";
+        percentText.textContent = "100%";
+      }, 1300);
+
+      // Step 4: Access Granted & Smooth Fade Out (after 1850ms)
+      setTimeout(() => {
+        titleEl.textContent = "✨ Akses Diterima!";
+        descEl.textContent = `Selamat datang, ${userData.division}`;
+        localStorage.setItem("renewables_ai_user", JSON.stringify(userData));
+        updateUserProfileUI(userData);
+
+        setTimeout(() => {
+          loginModal.style.opacity = "0";
+          setTimeout(() => {
+            loginModal.style.display = "none";
+            startNewChat();
+            loadChatSessions();
+            loadDocumentsList();
+            updateTokens();
+          }, 450);
+        }, 400);
+      }, 1900);
+    }
+
+    function handleLogout() {
+      if (confirm("Apakah Anda yakin ingin keluar dari akun ini?")) {
+        localStorage.removeItem("renewables_ai_user");
+        showLoginModal();
+      }
+    }
+
+    // Initial Load & Auth Check
+    initAuth();
   </script>
 </body>
 </html>
